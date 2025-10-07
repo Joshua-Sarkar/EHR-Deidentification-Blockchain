@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Medical De-Identification Portal</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f4f7f9; color: #333; margin: 0; padding: 40px; display: flex; justify-content: center; }
+        .container { background: white; padding: 40px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 100%; max-width: 800px; }
+        h1, h2 { color: #2c3e50; }
+        input, textarea, select, button { width: 100%; padding: 12px; margin-bottom: 15px; border-radius: 4px; border: 1px solid #ccc; box-sizing: border-box; }
+        button { background-color: #3498db; color: white; border: none; cursor: pointer; font-size: 16px; font-weight: bold; }
+        button:hover { background-color: #2980b9; }
+        #status, #result-status { margin-top: 15px; padding: 10px; border-radius: 4px; }
+        .success { background-color: #e8f5e9; color: #2e7d32; }
+        .error { background-color: #ffebee; color: #c62828; }
+        pre { background: #ecf0f1; padding: 15px; border-radius: 4px; white-space: pre-wrap; word-wrap: break-word; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <!-- Login Section -->
+    <div id="login-section">
+        <h1>User Login</h1>
+        <input type="text" id="username" placeholder="Enter username (e.g., dr_strange)">
+        <input type="password" id="password" placeholder="Enter password (e.g., password123)">
+        <button onclick="login()">Login</button>
+        <div id="status"></div>
+    </div>
+
+    <!-- Dashboard Section (hidden by default) -->
+    <div id="dashboard-section" style="display:none;">
+        <h1>De-Identification Dashboard</h1>
+        <h2 id="welcome-message"></h2>
+        <textarea id="medical-text" rows="10" placeholder="Paste medical literature here..."></textarea>
+        
+        <label for="purpose">Select Purpose:</label>
+        <select id="purpose">
+            <option value="Clinical Trial">Clinical Trial</option>
+            <option value="Academic Research">Academic Research</option>
+            <option value="Internal Audit">Internal Audit</option>
+            <option value="Education">Education</option>
+        </select>
+        
+        <button onclick="submitForDeidentification()">De-identify and Log to Blockchain</button>
+        
+        <div id="result-container" style="display:none;">
+            <h2>Results</h2>
+            <div id="result-status"></div>
+            <pre id="result-text"></pre>
+        </div>
+    </div>
+</div>
+
+<script>
+    // This function handles the login process
+    async function login() {
+        const username = document.getElementById('username').value;
+        const password = document.getElementById('password').value;
+        const statusDiv = document.getElementById('status');
+
+        try {
+            const response = await fetch('http://127.0.0.1:5000/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                // Save the token in the browser's local storage
+                localStorage.setItem('jwt_token', data.access_token);
+                
+                statusDiv.textContent = 'Login successful! Loading dashboard...';
+                statusDiv.className = 'success';
+                
+                // Hide login and show dashboard
+                document.getElementById('login-section').style.display = 'none';
+                document.getElementById('dashboard-section').style.display = 'block';
+
+                // Display a welcome message
+                const tokenPayload = JSON.parse(atob(data.access_token.split('.')[1]));
+                const user = JSON.parse(tokenPayload.sub);
+                document.getElementById('welcome-message').textContent = `Welcome, ${user.username}! (Role: ${user.role})`;
+                
+            } else {
+                statusDiv.textContent = `Login failed: ${data.msg}`;
+                statusDiv.className = 'error';
+            }
+        } catch (error) {
+            statusDiv.textContent = 'Error connecting to the server.';
+            statusDiv.className = 'error';
+        }
+    }
+
+    // This function handles the de-identification request
+    async function submitForDeidentification() {
+        const token = localStorage.getItem('jwt_token');
+        if (!token) {
+            alert('Your session has expired. Please log in again.');
+            return;
+        }
+
+        const rawText = document.getElementById('medical-text').value;
+        const purpose = document.getElementById('purpose').value;
+        const resultStatusDiv = document.getElementById('result-status');
+        const resultTextDiv = document.getElementById('result-text');
+
+        resultStatusDiv.textContent = 'Processing...';
+        resultStatusDiv.className = '';
+        document.getElementById('result-container').style.display = 'block';
+
+        try {
+            const response = await fetch('http://127.0.0.1:5000/deidentify', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ text: rawText, purpose: purpose })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                resultStatusDiv.textContent = 'Processing Complete!';
+                resultStatusDiv.className = 'success';
+                resultTextDiv.textContent = `De-identified Text:\n${data.deidentifiedText}\n\nBlockchain Status:\n${data.blockchainAuditStatus}`;
+            } else {
+                resultStatusDiv.textContent = `Error: ${data.msg || 'An unknown error occurred.'}`;
+                resultStatusDiv.className = 'error';
+            }
+        } catch (error) {
+            resultStatusDiv.textContent = 'Error connecting to the server.';
+            resultStatusDiv.className = 'error';
+        }
+    }
+</script>
+
+</body>
+</html>
